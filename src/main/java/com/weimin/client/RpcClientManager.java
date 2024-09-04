@@ -1,0 +1,103 @@
+package com.weimin.client;
+
+import com.weimin.handler.RpcResponseMessageHandler;
+import com.weimin.message.RpcRequestMessage;
+import com.weimin.protocol.MessageCodecSharable;
+import com.weimin.protocol.ProtocolFrameDecoder;
+import com.weimin.server.service.HelloService;
+import com.weimin.utils.SequenceIdGenerator;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import lombok.extern.slf4j.Slf4j;
+
+import java.lang.reflect.Proxy;
+
+@Slf4j
+public class RpcClientManager {
+    private static Channel channel = null;
+
+    private static final Object LOCK = new Object();
+
+    // 单例
+    public static Channel getChannel() {
+        if (channel != null) {
+            return channel;
+        }
+
+        synchronized (LOCK) {
+            if (channel != null) {
+                return channel;
+            }
+            initChannel();
+            return channel;
+        }
+    }
+
+    private static void initChannel() {
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        LoggingHandler LOGGING_HANDLER = new LoggingHandler(LogLevel.DEBUG);
+        MessageCodecSharable MESSAGE_CODEC = new MessageCodecSharable();
+
+        // rpc 响应消息处理器，待实现
+        RpcResponseMessageHandler RPC_HANDLER = new RpcResponseMessageHandler();
+
+        Bootstrap bootstrap = new Bootstrap();
+        bootstrap.channel(NioSocketChannel.class);
+        bootstrap.group(group);
+        bootstrap.handler(new ChannelInitializer<SocketChannel>() {
+            @Override
+            protected void initChannel(SocketChannel ch) throws Exception {
+                ch.pipeline().addLast(new ProtocolFrameDecoder());
+                ch.pipeline().addLast(LOGGING_HANDLER);
+                ch.pipeline().addLast(MESSAGE_CODEC);
+                ch.pipeline().addLast(RPC_HANDLER);
+            }
+
+        });
+        try {
+            channel = bootstrap.connect("localhost", 8080).sync().channel();
+            channel.closeFuture().addListener(future -> {
+                group.shutdownGracefully();
+            });
+        } catch (Exception e) {
+            log.error("client error", e);
+        }
+    }
+
+    public static <T> T getProxyService(Class<T> serviceClass) {
+        ClassLoader classLoader = serviceClass.getClassLoader();
+        Class<?>[] interfaces = {serviceClass};
+        Object o = Proxy.newProxyInstance(classLoader, interfaces, (proxy, method, args) -> {
+            RpcRequestMessage rpcRequestMessage = new RpcRequestMessage(
+                    SequenceIdGenerator.nextId(),
+                    serviceClass.getName(),
+                    method.getName(),
+                    method.getReturnType(),
+                    method.getParameterTypes(),
+                    args
+            );
+
+            getChannel().writeAndFlush(rpcRequestMessage);
+
+            // todo 接收结果
+
+            return null;
+
+        });
+
+        return (T) o;
+    }
+
+    public static void main(String[] args) {
+        HelloService helloService = getProxyService(HelloService.class);
+
+        helloService.sayHi("tom");
+        helloService.sayHi("jerry");
+    }
+}

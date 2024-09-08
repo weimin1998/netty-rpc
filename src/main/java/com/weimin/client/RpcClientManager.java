@@ -14,9 +14,12 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.util.concurrent.DefaultPromise;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Proxy;
+
+import static com.weimin.config.AppConfig.PROMISES;
 
 @Slf4j
 public class RpcClientManager {
@@ -73,9 +76,10 @@ public class RpcClientManager {
     public static <T> T getProxyService(Class<T> serviceClass) {
         ClassLoader classLoader = serviceClass.getClassLoader();
         Class<?>[] interfaces = {serviceClass};
+        int id = SequenceIdGenerator.nextId();
         Object o = Proxy.newProxyInstance(classLoader, interfaces, (proxy, method, args) -> {
             RpcRequestMessage rpcRequestMessage = new RpcRequestMessage(
-                    SequenceIdGenerator.nextId(),
+                    id,
                     serviceClass.getName(),
                     method.getName(),
                     method.getReturnType(),
@@ -85,9 +89,19 @@ public class RpcClientManager {
 
             getChannel().writeAndFlush(rpcRequestMessage);
 
-            // todo 接收结果
 
-            return null;
+            DefaultPromise<Object> defaultPromise = new DefaultPromise<>(getChannel().eventLoop());
+            PROMISES.put(id, defaultPromise);
+
+            defaultPromise.await();
+
+            if (defaultPromise.isSuccess()) {
+                return defaultPromise.getNow();
+            } else {
+                Throwable cause = defaultPromise.cause();
+                throw new RuntimeException(cause);
+            }
+
 
         });
 
@@ -97,7 +111,9 @@ public class RpcClientManager {
     public static void main(String[] args) {
         HelloService helloService = getProxyService(HelloService.class);
 
-        helloService.sayHi("tom");
-        helloService.sayHi("jerry");
+        String s = helloService.sayHi("tom");
+        System.out.println(s);
+        String s1 = helloService.sayHello("jerry");
+        System.out.println(s1);
     }
 }

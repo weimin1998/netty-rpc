@@ -5,4 +5,9 @@ public class HelloServiceEnImpl implements HelloService {
     public String sayHi(String name) {
         return "hi, " + name;
     }
+
+    @Override
+    public String sayHello(String name) {
+        return "hello, " + name;
+    }
 }

@@ -1,6 +1,7 @@
 package com.weimin.config;
 
 import com.weimin.protocol.Serializer;
+import io.netty.util.concurrent.Promise;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +14,8 @@ public abstract class AppConfig {
     static Properties properties;
 
     static Map<Class<?>, Object> map = new ConcurrentHashMap<>();
+
+    public static Map<Integer, Promise<Object>> PROMISES = new ConcurrentHashMap<>();
 
     static {
         try (InputStream in = AppConfig.class.getResourceAsStream("/application.properties")) {

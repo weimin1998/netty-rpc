@@ -26,7 +26,9 @@ public class RpcRequestMessageHandler extends SimpleChannelInboundHandler<RpcReq
             rpcResponseMessage.setReturnValue(invoke);
         } catch (Exception e) {
             log.error(e.getMessage());
-            rpcResponseMessage.setExceptionValue(e);
+            // 异常栈信息太多了，不要返回全部异常信息；否则 超出半包编解码器的限制，会出错
+            // rpcResponseMessage.setExceptionValue(e);
+            rpcResponseMessage.setExceptionValue(new RuntimeException("远程调用出错！" + e.getCause().getMessage()));
         }
         channelHandlerContext.writeAndFlush(rpcResponseMessage);
     }
